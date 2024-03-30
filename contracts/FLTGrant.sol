@@ -1,30 +1,59 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.24;
 
+import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 // TODO dbg, don't slip into prod
 import {console} from "hardhat/console.sol";
 
-contract FLTLock is Ownable {
-    bool _distributionActive;
-    uint _unlockTime;
-
+contract FLTGrant is ERC20, Ownable {
     using EnumerableMap for EnumerableMap.AddressToUintMap;
 
-    EnumerableMap.AddressToUintMap private _tokenAllocations;
+    IERC20 public fltToken;
 
-    constructor() Ownable(msg.sender) {
+    bool _distributionActive;
+    uint _unlockTime;
+    EnumerableMap.AddressToUintMap private _tokenAllocations;
+    mapping(address => uint) _lockTimes;
+    mapping(address => bool) _claimed;
+
+    constructor(
+        IERC20 _fltToken
+    ) ERC20("FLTGrant", "FLT-FPT") Ownable(msg.sender) {
         _unlockTime = block.timestamp + 5 * 365 days;
         _distributionActive = true;
+        fltToken = _fltToken;
     }
 
+    // TODO should there be no way to edit? what about adding multiple allocations?
+    // is the allocation always a single unit?
     function addTokenAllocation(
         address account,
-        uint amount
+        uint256 amount
     ) public onlyOwner returns (bool) {
         _tokenAllocations.set(account, amount);
+        _lockTimes[account] = block.timestamp + 365 days; // Lock for 1 year
+        _mint(account, amount); // Mint FLT-FPT tokens representing the allocation
+        return true;
+    }
+
+    function claim(uint amount) public returns (bool) {
+        require(
+            block.timestamp >= _lockTimes[msg.sender],
+            "Lock period not over"
+        );
+        require(
+            balanceOf(msg.sender) >= amount,
+            "Insufficient FLT-FPT balance"
+        );
+        require(_distributionActive, "Distribution is paused");
+        require(!_claimed[msg.sender], "Already claimed");
+        _burn(msg.sender, amount); // Burn FLT-FPT tokens
+        require(fltToken.transfer(msg.sender, amount), "FLT transfer failed"); // Transfer FLT to the sender
+
         return true;
     }
 
