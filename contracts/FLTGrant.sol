@@ -9,6 +9,9 @@ import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap
 // TODO dbg, don't slip into prod
 import {console} from "hardhat/console.sol";
 
+// TODOs
+// for time locking use governance/TimelockController from openzeppelin
+
 contract FLTGrant is ERC20, Ownable {
     using EnumerableMap for EnumerableMap.AddressToUintMap;
 
@@ -69,12 +72,11 @@ contract FLTGrant is ERC20, Ownable {
     function retrieveRemainingBalance() public onlyOwner returns (bool) {
         if (block.timestamp < _unlockTime)
             revert("Unlock time has not been reached");
-        // Retrieve remaining balance, this will be iterative likely
         for (uint i = 0; i < _tokenAllocations.length(); i++) {
             (address account, uint amount) = _tokenAllocations.at(i);
             console.log("Retrieving %s tokens from %s", amount, account);
-            // this is not trivial, retrieving the remaining tokens to the owner
-            // will require using an IERC20 interface for the token
+            _burn(account, amount);
+            require(fltToken.transfer(account, amount), "FLT transfer failed");
         }
         return true;
     }
