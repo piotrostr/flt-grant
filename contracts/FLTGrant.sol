@@ -9,7 +9,7 @@ import {FluenceToken} from "./FluenceToken.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 // TODO dbg, don't slip into prod
-import {console} from "hardhat/console.sol";
+// import {console} from "hardhat/console.sol";
 
 // TODOs
 // for time locking use governance/TimelockController from openzeppelin
@@ -27,6 +27,14 @@ contract FLTGrant is ERC20, Ownable {
 
     mapping(address => uint) _lockTimes;
     mapping(address => bool) _claimed;
+
+    event Claimed(address indexed account, uint amount);
+    event TokenAllocationAdded(address indexed account, uint amount);
+
+    event RemainingBalanceRetrieved(uint total);
+
+    event DistributionPaused();
+    event DistributionResumed();
 
     constructor(
         FluenceToken token_
@@ -49,9 +57,14 @@ contract FLTGrant is ERC20, Ownable {
         _tokenAllocations.set(account, amount);
         _lockTimes[account] = block.timestamp + 365 days; // Lock for 1 year
         _mint(account, amount); // Mint FLT-FPT tokens representing the allocation
+
+        emit TokenAllocationAdded(account, amount);
+
         return true;
     }
 
+    // TODO currently can only claim once but still there is amount param,
+    // meaning if max amount is not claimed, it won't be possible to re-claim remainder
     function claim(uint amount) public returns (bool) {
         require(
             block.timestamp >= _lockTimes[msg.sender],
@@ -68,6 +81,8 @@ contract FLTGrant is ERC20, Ownable {
 
         IERC20(token).safeTransfer(msg.sender, amount);
 
+        emit Claimed(msg.sender, amount);
+
         return true;
     }
 
@@ -75,32 +90,46 @@ contract FLTGrant is ERC20, Ownable {
         if (!_distributionActive) {
             revert("Cannot pause inactive distribution");
         }
+
         _distributionActive = false;
+
+        emit DistributionPaused();
+
         return true;
-        // Pause distribution
     }
 
     function retrieveRemainingBalance() public onlyOwner returns (bool) {
         require(
-            block.timestamp < _unlockTime,
+            block.timestamp >= _unlockTime,
             "Unlock time has not been reached"
         );
+
+        uint total = 0;
+
         for (uint i = 0; i < _tokenAllocations.length(); i++) {
             (address account, uint amount) = _tokenAllocations.at(i);
-            console.log("Retrieving %s tokens from %s", amount, account);
+            // console.log("Retrieving %s tokens from %s", amount, account);
 
             _burn(account, amount);
 
-            IERC20(token).safeTransfer(account, amount);
+            IERC20(token).safeTransfer(msg.sender, amount);
+
+            total += amount;
         }
+
+        emit RemainingBalanceRetrieved(total);
+
         return true;
     }
 
-    function releaseDistribution() public onlyOwner returns (bool) {
+    function resumeDistribution() public onlyOwner returns (bool) {
         if (_distributionActive) {
             revert("Cannot resume active distribution");
         }
         _distributionActive = true;
+
+        emit DistributionResumed();
+
         return true;
     }
 
