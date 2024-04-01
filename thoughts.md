@@ -9,6 +9,10 @@
    going to be used?
 4. should we allow public view of `tokenAllocations` and `lockTimes`?
 5. should we allow multiple allocations that vest at given intervals?
+6. if it is past unlock time and there is an allocation locked for say 1 year at
+   the 5 year mark, the tokens can get retrieved by owner, shall the lock time be
+   for each of the balances? after 1 year user can retrieve, after 5 years owner
+   can retrieve?
 
 e.g.
 
