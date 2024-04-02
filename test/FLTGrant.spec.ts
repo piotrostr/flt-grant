@@ -26,9 +26,7 @@ describe("FLTGrant", () => {
 
     const fltGrant = await FLTGrant.deploy(await fltToken.getAddress());
     await fltGrant.waitForDeployment();
-
     await fltToken.transfer(await fltGrant.getAddress(), 100_000);
-
     return { owner, alice, bob, fltGrant, fltToken };
   };
 
@@ -37,17 +35,15 @@ describe("FLTGrant", () => {
       const { owner, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
       const fltGrantAddress = await fltGrant.getAddress();
       const fltTokenAddress = await fltToken.getAddress();
-
       expect(fltGrantAddress).to.be.string;
       expect(fltTokenAddress).to.be.string;
-
       expect(await fltGrant.token()).to.equal(await fltToken.getAddress());
-
       expect(await fltToken.balanceOf(fltGrantAddress)).to.equal(100_000);
+      expect(await fltGrant.owner()).to.equal(owner.address);
     });
   });
 
-  describe("Granting", () => {
+  describe("Allocating", () => {
     it("Should fail if the sender is not the owner", async () => {
       const { alice, fltGrant } = await loadFixture(deployFLTGrant);
       const aliceFltGrant = fltGrant.connect(alice);
@@ -58,12 +54,17 @@ describe("FLTGrant", () => {
     it("Should allocate right amount of tokens", async () => {
       const { alice, fltGrant } = await loadFixture(deployFLTGrant);
       await fltGrant.addTokenAllocation(alice, 10_000);
-
-      const allocation = await fltGrant.tokenAllocations(alice);
+      const allocation = await fltGrant.balanceOf(alice);
       expect(allocation).to.equal(10_000);
     });
 
-    it("Should fail if the unlockTime is not in the future", async () => {});
+    it("Should not be possible to allocate more tokens than FLT available", async () => {
+      const { alice, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
+      const fltBalance = await fltToken.balanceOf(await fltGrant.getAddress());
+      expect(fltBalance).not.to.equal(0);
+      const tx = fltGrant.addTokenAllocation(alice, fltBalance + BigInt(1));
+      expect(tx).to.be.reverted;
+    });
 
     it("Should fail if the amount is zero", async () => {
       const { alice, fltGrant } = await loadFixture(deployFLTGrant);
@@ -75,65 +76,70 @@ describe("FLTGrant", () => {
       const tx = fltGrant.addTokenAllocation(ethers.ZeroAddress, 10_000);
       expect(tx).to.be.reverted;
     });
+
+    it("Should not be possible to add multiple allocations", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      expect(fltGrant.addTokenAllocation(alice, 10_000)).to.be.reverted;
+    });
+
+    it("Should lock and unlock the allocated FLT properly", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      expect(await fltGrant.lockedBalance()).to.equal(10_000);
+      const aliceFltGrant = fltGrant.connect(alice);
+      await time.increase(oneYear);
+      await aliceFltGrant.claim();
+      expect(await fltGrant.lockedBalance()).to.equal(0);
+    });
+
+    it("Should not be possible to add allocations after claim", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      await time.increase(oneYear);
+      await fltGrant.connect(alice).claim();
+      expect(fltGrant.addTokenAllocation(alice, 10_000)).to.be.reverted;
+    });
   });
 
   describe("Claiming", () => {
     it("Should fail if the unlockTime has not passed", async () => {
       const { alice, fltGrant } = await loadFixture(deployFLTGrant);
       await fltGrant.addTokenAllocation(alice, 10_000);
-
-      const allocation = await fltGrant.tokenAllocations(alice);
+      const allocation = await fltGrant.balanceOf(alice);
       expect(allocation).to.equal(10_000);
-
       const aliceFltGrant = fltGrant.connect(alice);
-
-      expect(aliceFltGrant.claim(10_000)).to.be.reverted;
+      expect(aliceFltGrant.claim()).to.be.reverted;
     });
 
     it("Should fail if no FLT tokens are available", async () => {
       const { bob, fltGrant } = await loadFixture(deployFLTGrant);
       const bobFltGrant = fltGrant.connect(bob);
-
-      expect(bobFltGrant.claim(10_000)).to.be.reverted;
-    });
-
-    // TODO
-    it.skip("Should be possible to add multiple allocations", async () => {
-      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
-      await fltGrant.addTokenAllocation(alice, 10_000);
-      await fltGrant.addTokenAllocation(alice, 10_000);
-      await fltGrant.addTokenAllocation(alice, 1_000);
-
-      const allocation = await fltGrant.tokenAllocations(alice);
-      expect(allocation).to.equal(21_000);
+      expect(bobFltGrant.claim()).to.be.reverted;
     });
 
     it("Should be possible to claim the FLT tokens", async () => {
       const { alice, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
       const amount = BigInt(10_000);
       await fltGrant.addTokenAllocation(alice, amount);
-
-      const allocation = await fltGrant.tokenAllocations(alice);
+      const allocation = await fltGrant.balanceOf(alice);
       expect(allocation).to.equal(amount);
-
       const aliceFltGrant = fltGrant.connect(alice);
       await time.increase(oneYear);
-
       const fltGrantBalance = await fltToken.balanceOf(
         await fltGrant.getAddress()
       );
-
-      const res = await aliceFltGrant.claim(amount);
+      const res = await aliceFltGrant.claim();
       await res.wait();
-
       const balance = await fltToken.balanceOf(alice.address);
       expect(balance).to.equal(amount);
-
       const postTxFltGrantBalance = await fltToken.balanceOf(
         await fltGrant.getAddress()
       );
 
       expect(postTxFltGrantBalance).to.equal(fltGrantBalance - amount);
+      expect(await fltGrant.balanceOf(alice)).to.equal(0);
+      expect(await fltGrant.claimed(alice)).to.be.true;
     });
 
     it("Should fail if the grant has already been claimed", async () => {
@@ -143,15 +149,12 @@ describe("FLTGrant", () => {
       const amount = BigInt(10_000);
       await fltGrant.addTokenAllocation(alice, amount);
 
-      const allocation = await fltGrant.tokenAllocations(alice);
-      expect(allocation).to.equal(amount);
-
       const oneYear = 365 * 24 * 60 * 60;
       await time.increase(oneYear);
 
-      await aliceFltGrant.claim(amount);
+      await aliceFltGrant.claim();
 
-      expect(aliceFltGrant.claim(amount)).to.be.reverted;
+      expect(aliceFltGrant.claim()).to.be.reverted;
     });
 
     it("Should fail if the distribution is not active", async () => {
@@ -162,7 +165,7 @@ describe("FLTGrant", () => {
 
       const aliceFltGrant = fltGrant.connect(alice);
 
-      expect(aliceFltGrant.claim(10_000)).to.be.reverted;
+      expect(aliceFltGrant.claim()).to.be.reverted;
     });
   });
 
@@ -196,6 +199,15 @@ describe("FLTGrant", () => {
   });
 
   describe("Retrieve Remaining Balances", () => {
+    it("Should not be possible to retrieve if before unlock time", async () => {
+      const { alice, bob, fltGrant } = await loadFixture(deployFLTGrant);
+
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      await fltGrant.addTokenAllocation(bob, 20_000);
+
+      expect(fltGrant.retrieveRemainingBalance()).to.be.reverted;
+    });
+
     it("Should fail if the sender is not the owner", async () => {
       const { alice, bob, fltGrant } = await loadFixture(deployFLTGrant);
       await fltGrant.addTokenAllocation(alice, 10_000);
@@ -211,32 +223,40 @@ describe("FLTGrant", () => {
         deployFLTGrant
       );
 
-      await fltGrant.addTokenAllocation(alice, 10_000);
-      await fltGrant.addTokenAllocation(bob, 20_000);
+      const fltGrantFltBalance = await fltToken.balanceOf(
+        await fltGrant.getAddress()
+      );
 
-      const balance = await fltToken.balanceOf(owner.address);
+      const aliceAmount = BigInt(10_000);
+      const bobAmount = BigInt(20_000);
+
+      await fltGrant.addTokenAllocation(alice, aliceAmount);
+      await fltGrant.addTokenAllocation(bob, bobAmount);
+
+      const lockedAmount = aliceAmount + bobAmount;
+
+      const availableForRetrieval = fltGrantFltBalance - lockedAmount;
 
       await time.increase(fiveYears);
 
+      const ownerFltBalance = await fltToken.balanceOf(owner.address);
+
       await (await fltGrant.retrieveRemainingBalance()).wait();
 
-      const postTxBalance = await fltToken.balanceOf(owner.address);
-      expect(postTxBalance).to.equal(balance + BigInt(30_000));
-    });
+      const postTxOwnerFltBalance = await fltToken.balanceOf(owner.address);
 
-    it("Should not be possible to retrieve if before unlock time", async () => {
-      const { alice, bob, fltGrant } = await loadFixture(deployFLTGrant);
+      const expectedOwnerBalancePostTx =
+        ownerFltBalance + availableForRetrieval;
 
-      await fltGrant.addTokenAllocation(alice, 10_000);
-      await fltGrant.addTokenAllocation(bob, 20_000);
+      expect(postTxOwnerFltBalance).to.equal(expectedOwnerBalancePostTx);
 
-      expect(fltGrant.retrieveRemainingBalance()).to.be.reverted;
+      expect(await fltToken.balanceOf(await fltGrant.getAddress())).to.equal(
+        lockedAmount
+      );
     });
 
     it("Should fail if no FLT tokens are available", async () => {
-      const { owner, alice, bob, fltGrant, fltToken } = await loadFixture(
-        deployFLTGrant
-      );
+      const { alice, bob, fltGrant } = await loadFixture(deployFLTGrant);
 
       await fltGrant.addTokenAllocation(alice, 10_000);
       await fltGrant.addTokenAllocation(bob, 20_000);
@@ -267,7 +287,7 @@ describe("FLTGrant", () => {
       await time.increase(oneYear);
 
       const aliceFltGrant = fltGrant.connect(alice);
-      const tx = aliceFltGrant.claim(amount);
+      const tx = aliceFltGrant.claim();
 
       await expect(tx)
         .to.emit(fltGrant, "Claimed")
@@ -289,14 +309,58 @@ describe("FLTGrant", () => {
     });
 
     it("Emits RemainingBalanceRetrieved", async () => {
-      const { owner, fltGrant } = await loadFixture(deployFLTGrant);
-      await fltGrant.addTokenAllocation(owner, 10_000);
+      const { owner, fltToken, fltGrant } = await loadFixture(deployFLTGrant);
+      const totalFltBalance = await fltToken.balanceOf(
+        await fltGrant.getAddress()
+      );
+      const amount = BigInt(10_000);
+      await fltGrant.addTokenAllocation(owner, amount);
       await time.increase(fiveYears);
 
       const tx = fltGrant.retrieveRemainingBalance();
       await expect(tx)
         .to.emit(fltGrant, "RemainingBalanceRetrieved")
-        .withArgs(10_000);
+        .withArgs(totalFltBalance - amount);
+    });
+  });
+
+  describe("Implements ERC20", () => {
+    it("Should have totalSupply that increases on mint", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      const totalSupply = await fltGrant.totalSupply();
+      const amount = BigInt(10_000);
+      await fltGrant.addTokenAllocation(alice, amount);
+      expect(await fltGrant.totalSupply()).to.equal(totalSupply + amount);
+    });
+
+    it("Should have balanceOf that returns the balance of an address", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      const amount = BigInt(10_000);
+      await fltGrant.addTokenAllocation(alice, amount);
+      expect(await fltGrant.balanceOf(alice.address)).to.equal(amount);
+    });
+
+    it("Should have decimals that match the FluenceToken decimals", async () => {
+      const { fltGrant, fltToken } = await loadFixture(deployFLTGrant);
+      expect(await fltGrant.decimals()).to.equal(await fltToken.decimals());
+    });
+  });
+
+  describe("Overrides ERC20", () => {
+    it("Should not be possible to transfer tokens", async () => {
+      const { fltGrant, alice } = await loadFixture(deployFLTGrant);
+      await expect(fltGrant.transfer(alice.address, 10_000)).to.be.reverted;
+    });
+
+    it("Should not be possible to approve tokens", async () => {
+      const { fltGrant, alice } = await loadFixture(deployFLTGrant);
+      await expect(fltGrant.approve(alice.address, 10_000)).to.be.reverted;
+    });
+
+    it("Should not be possible to transferFrom tokens", async () => {
+      const { fltGrant, alice } = await loadFixture(deployFLTGrant);
+      await expect(fltGrant.transferFrom(alice.address, alice.address, 10_000))
+        .to.be.reverted;
     });
   });
 });
