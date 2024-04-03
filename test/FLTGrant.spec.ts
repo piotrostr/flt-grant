@@ -100,6 +100,19 @@ describe("FLTGrant", () => {
       await fltGrant.connect(alice).claim();
       expect(fltGrant.addTokenAllocation(alice, 10_000)).to.be.reverted;
     });
+
+    it("Should not be possible to add allocations if balance is insufficient", async () => {
+      const { alice, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 100_000);
+
+      const fltGrantFltBalance = await fltToken.balanceOf(
+        await fltGrant.getAddress()
+      );
+      expect(fltGrantFltBalance).to.equal(100_000);
+      expect(await fltGrant.lockedBalance()).to.equal(100_000);
+
+      expect(fltGrant.addTokenAllocation(alice, 1)).to.be.reverted;
+    });
   });
 
   describe("Claiming", () => {

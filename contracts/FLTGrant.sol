@@ -11,11 +11,11 @@ contract FLTGrant is ERC20, Ownable {
 
     FluenceToken public immutable token;
 
+    // time when non-locked FLT can be retrieved by owner
+    uint public immutable unlockTime;
+
     // if false, no new claims can be made
     bool public distributionActive;
-
-    // time when non-locked FLT can be retrieved by owner
-    uint public unlockTime;
 
     // total amount of FLT tokens available for claim
     uint public lockedBalance;
@@ -46,15 +46,14 @@ contract FLTGrant is ERC20, Ownable {
      *
      * @param account The account to allocate tokens to.
      * @param amount The amount of tokens to allocate.
-     * @return A boolean indicating whether the operation succeeded.
      */
     function addTokenAllocation(
         address account,
         uint256 amount
-    ) public onlyOwner returns (bool) {
+    ) external onlyOwner {
         require(balanceOf(account) == 0, "Account was already allocated");
         require(
-            IERC20(token).balanceOf(address(this)) >= amount,
+            IERC20(token).balanceOf(address(this)) - lockedBalance >= amount,
             "FLTGrant has insufficient FLT balance, cannot allocate"
         );
         require(
@@ -70,8 +69,6 @@ contract FLTGrant is ERC20, Ownable {
         lockedBalance += amount;
 
         emit TokenAllocationAdded(account, amount);
-
-        return true;
     }
 
     /**
@@ -79,10 +76,8 @@ contract FLTGrant is ERC20, Ownable {
      * The method can be called only after the lock period is over.
      * Lock period is for 365 days.
      * After lock period elapses, allocation can be claimed indifinitely.
-     *
-     * @return A boolean indicating whether the operation succeeded.
      */
-    function claim() public returns (bool) {
+    function claim() external {
         require(
             block.timestamp >= lockTimes[msg.sender] + 365 days,
             "Lock period not over"
@@ -103,17 +98,13 @@ contract FLTGrant is ERC20, Ownable {
         lockedBalance -= amount;
 
         emit Claimed(msg.sender, amount);
-
-        return true;
     }
 
     /**
      * @dev Pauses the distribution.
      * The method can be called only by the owner.
-     *
-     * @return A boolean indicating whether the operation succeeded.
      */
-    function pauseDistribution() public onlyOwner returns (bool) {
+    function pauseDistribution() external onlyOwner {
         if (!distributionActive) {
             revert("Cannot pause inactive distribution");
         }
@@ -121,35 +112,27 @@ contract FLTGrant is ERC20, Ownable {
         distributionActive = false;
 
         emit DistributionPaused();
-
-        return true;
     }
 
     /**
      * @dev Resumes the distribution.
      * The method can be called only by the owner.
-     *
-     * @return A boolean indicating whether the operation succeeded.
      */
-    function resumeDistribution() public onlyOwner returns (bool) {
+    function resumeDistribution() external onlyOwner {
         if (distributionActive) {
             revert("Cannot resume active distribution");
         }
         distributionActive = true;
 
         emit DistributionResumed();
-
-        return true;
     }
 
     /**
      * @dev Retrieves the remaining balance of unallocated FLT tokens.
      * The method can be called only by the owner after 5 years of contract
      * creation.
-     *
-     * @return A boolean indicating whether the operation succeeded.
      */
-    function retrieveRemainingBalance() public onlyOwner returns (bool) {
+    function retrieveRemainingBalance() external onlyOwner {
         require(block.timestamp >= unlockTime, "Unlock time not reached");
 
         uint total = IERC20(token).balanceOf(address(this));
@@ -158,8 +141,6 @@ contract FLTGrant is ERC20, Ownable {
         IERC20(token).safeTransfer(owner(), unallocated);
 
         emit RemainingBalanceRetrieved(unallocated);
-
-        return true;
     }
 
     /**
