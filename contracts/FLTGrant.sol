@@ -20,6 +20,9 @@ contract FLTGrant is ERC20, Ownable {
     // total amount of FLT tokens available for claim
     uint public lockedBalance;
 
+    // lock period after which the allocation can be claimed
+    uint public lockPeriod;
+
     // time of allocation, used to determine when the lock period is over
     mapping(address => uint) public lockTimes;
 
@@ -33,9 +36,12 @@ contract FLTGrant is ERC20, Ownable {
     event DistributionResumed();
 
     constructor(
-        FluenceToken token_
+        FluenceToken token_,
+        uint lockPeriod_,
+        uint unlockPeriod_
     ) ERC20("Fluence Token Grant", "FLT-FPT") Ownable(msg.sender) {
-        unlockTime = block.timestamp + 5 * 365 days;
+        lockPeriod = lockPeriod_;
+        unlockTime = block.timestamp + unlockPeriod_;
         distributionActive = true;
         token = token_;
     }
@@ -79,7 +85,7 @@ contract FLTGrant is ERC20, Ownable {
      */
     function claim() external {
         require(
-            block.timestamp >= lockTimes[msg.sender] + 365 days,
+            block.timestamp >= lockTimes[msg.sender] + lockPeriod,
             "Lock period not over"
         );
         require(distributionActive, "Distribution is paused");
@@ -137,6 +143,8 @@ contract FLTGrant is ERC20, Ownable {
 
         uint total = IERC20(token).balanceOf(address(this));
         uint unallocated = total - lockedBalance;
+
+        require(unallocated > 0, "No unallocated FLT in the contract");
 
         IERC20(token).safeTransfer(owner(), unallocated);
 

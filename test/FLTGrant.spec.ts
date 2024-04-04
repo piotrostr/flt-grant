@@ -24,7 +24,11 @@ describe("FLTGrant", () => {
       1_000_000_000,
     ])) as FluenceToken & Contract;
 
-    const fltGrant = await FLTGrant.deploy(await fltToken.getAddress());
+    const fltGrant = await FLTGrant.deploy(
+      await fltToken.getAddress(),
+      oneYear,
+      fiveYears
+    );
     await fltGrant.waitForDeployment();
     await fltToken.transfer(await fltGrant.getAddress(), 100_000);
 
