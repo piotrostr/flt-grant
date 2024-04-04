@@ -1,0 +1,30 @@
+name: Cross-Architecture Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up QEMU (for ARM emulation)
+        if: matrix.architecture == 'arm64'
+        uses: docker/setup-qemu-action@v1
+        with:
+          platforms: arm64
+
+      - name: Build and run tests (AMD64)
+        if: matrix.architecture == 'amd64'
+        run: |
+          npm install
+          npm install -g hardhat
+          hardhat test
+
+      - name: Build and run tests (ARM64)
+        if: matrix.architecture == 'arm64'
+        run: |
+          docker run --privileged --rm -v $(pwd):/workspace -w /workspace arm64v8/node:latest /bin/bash -c "npm install && npm install -g hardhat && hardhat test"
