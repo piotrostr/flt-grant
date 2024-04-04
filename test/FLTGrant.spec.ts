@@ -37,7 +37,9 @@ describe("FLTGrant", () => {
 
   describe("Deployment", () => {
     it("Deploys without issues", async () => {
-      const { owner, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
+      const { owner, alice, bob, fltGrant, fltToken } = await loadFixture(
+        deployFLTGrant
+      );
       const fltGrantAddress = await fltGrant.getAddress();
       const fltTokenAddress = await fltToken.getAddress();
       expect(fltGrantAddress).to.be.string;
@@ -45,6 +47,11 @@ describe("FLTGrant", () => {
       expect(await fltGrant.token()).to.equal(await fltToken.getAddress());
       expect(await fltToken.balanceOf(fltGrantAddress)).to.equal(100_000);
       expect(await fltGrant.owner()).to.equal(owner.address);
+      expect(await fltGrant.balanceOf(alice.address)).to.equal(0);
+      expect(await fltGrant.balanceOf(bob.address)).to.equal(0);
+      expect(await fltGrant.distributionActive()).to.be.true;
+      expect(await fltGrant.lockedBalance()).to.equal(0);
+      expect(await fltGrant.lockPeriod()).to.equal(oneYear);
     });
   });
 
