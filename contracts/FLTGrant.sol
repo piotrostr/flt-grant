@@ -39,7 +39,7 @@ contract FLTGrant is ERC20, Ownable {
         FluenceToken token_,
         uint lockPeriod_,
         uint unlockPeriod_
-    ) ERC20("Fluence Token Grant", "FLT-FPT") Ownable(msg.sender) {
+    ) ERC20("Fluence Token Grant", "FLT-GRANT") Ownable(msg.sender) {
         lockPeriod = lockPeriod_;
         unlockTime = block.timestamp + unlockPeriod_;
         distributionActive = true;
