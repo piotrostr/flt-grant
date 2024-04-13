@@ -31,6 +31,7 @@ contract FLTGrant is ERC20, Ownable {
 
     event Claimed(address indexed account, uint amount);
     event TokenAllocationAdded(address indexed account, uint amount);
+    event TokenAllocationRemoved(address indexed account, uint amount);
     event RemainingBalanceRetrieved(uint total);
     event DistributionPaused();
     event DistributionResumed();
@@ -67,14 +68,28 @@ contract FLTGrant is ERC20, Ownable {
             "Account already claimed, no second-time allocation allowed"
         );
 
-        lockTimes[account] = block.timestamp;
-
         // Mint FLT-FPT tokens representing the allocation
         _mint(account, amount);
+
+        lockTimes[account] = block.timestamp;
 
         lockedBalance += amount;
 
         emit TokenAllocationAdded(account, amount);
+    }
+
+    function removeAllocation(address account) external onlyOwner {
+        require(balanceOf(account) > 0, "Account has no allocation");
+
+        uint amount = balanceOf(account);
+
+        _burn(account, amount);
+
+        lockTimes[account] = 0;
+
+        lockedBalance -= amount;
+
+        emit TokenAllocationRemoved(account, amount);
     }
 
     /**

@@ -136,6 +136,54 @@ describe("FLTGrant", () => {
     });
   });
 
+  describe("Removing Allocation", () => {
+    it("Should fail if the sender is not the owner", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      const aliceFltGrant = fltGrant.connect(alice);
+      await expect(aliceFltGrant.removeAllocation(alice)).to.be.reverted;
+    });
+
+    it("Should fail for accounts without allocation", async () => {
+      const { fltGrant } = await loadFixture(deployFLTGrant);
+      await expect(
+        fltGrant.removeAllocation(ethers.ZeroAddress)
+      ).to.be.revertedWith("Account has no allocation");
+    });
+
+    it("Should work for accounts with allocation", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      await expect(fltGrant.removeAllocation(alice)).to.not.be.reverted;
+      expect(await fltGrant.balanceOf(alice)).to.equal(0);
+      expect(await fltGrant.lockedBalance()).to.equal(0);
+    });
+
+    it("Should release the locked balance", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      const amount = BigInt(10_000);
+      await (await fltGrant.addTokenAllocation(alice, amount)).wait();
+      expect(await fltGrant.lockedBalance()).to.equal(amount);
+    });
+
+    it("Should fail if the grant has already been claimed", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      const aliceFltGrant = fltGrant.connect(alice);
+
+      const amount = BigInt(10_000);
+      await (await fltGrant.addTokenAllocation(alice, amount)).wait();
+
+      const oneYear = 365 * 24 * 60 * 60;
+      await time.increase(oneYear);
+
+      await aliceFltGrant.claim(amount);
+
+      await expect(fltGrant.removeAllocation(alice)).to.be.revertedWith(
+        "Account has no allocation"
+      );
+    });
+  });
+
   describe("Claiming", () => {
     it("Should be possible to claim in increments using claim method", async () => {
       const { alice, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
@@ -407,6 +455,16 @@ describe("FLTGrant", () => {
 
       await expect(tx)
         .to.emit(fltGrant, "TokenAllocationAdded")
+        .withArgs(alice.address, 10_000);
+    });
+
+    it("Emits TokenAllocationRemoved", async () => {
+      const { alice, fltGrant } = await loadFixture(deployFLTGrant);
+      await fltGrant.addTokenAllocation(alice, 10_000);
+      const tx = fltGrant.removeAllocation(alice);
+
+      await expect(tx)
+        .to.emit(fltGrant, "TokenAllocationRemoved")
         .withArgs(alice.address, 10_000);
     });
 
