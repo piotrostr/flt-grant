@@ -31,6 +31,7 @@ contract FLTGrant is ERC20, Ownable {
 
     event Claimed(address indexed account, uint amount);
     event TokenAllocationAdded(address indexed account, uint amount);
+    event TokenAllocationRemoved(address indexed account, uint amount);
     event RemainingBalanceRetrieved(uint total);
     event DistributionPaused();
     event DistributionResumed();
@@ -39,7 +40,7 @@ contract FLTGrant is ERC20, Ownable {
         FluenceToken token_,
         uint lockPeriod_,
         uint unlockPeriod_
-    ) ERC20("Fluence Token Grant", "FLT-FPT") Ownable(msg.sender) {
+    ) ERC20("Fluence Token Grant", "FLT-GRANT") Ownable(msg.sender) {
         lockPeriod = lockPeriod_;
         unlockTime = block.timestamp + unlockPeriod_;
         distributionActive = true;
@@ -67,14 +68,28 @@ contract FLTGrant is ERC20, Ownable {
             "Account already claimed, no second-time allocation allowed"
         );
 
-        lockTimes[account] = block.timestamp;
-
         // Mint FLT-FPT tokens representing the allocation
         _mint(account, amount);
+
+        lockTimes[account] = block.timestamp;
 
         lockedBalance += amount;
 
         emit TokenAllocationAdded(account, amount);
+    }
+
+    function removeAllocation(address account) external onlyOwner {
+        require(balanceOf(account) > 0, "Account has no allocation");
+
+        uint amount = balanceOf(account);
+
+        _burn(account, amount);
+
+        lockTimes[account] = 0;
+
+        lockedBalance -= amount;
+
+        emit TokenAllocationRemoved(account, amount);
     }
 
     /**
@@ -83,7 +98,7 @@ contract FLTGrant is ERC20, Ownable {
      * Lock period is for 365 days.
      * After lock period elapses, allocation can be claimed indifinitely.
      */
-    function claim() external {
+    function claim(uint amount) public {
         require(
             block.timestamp >= lockTimes[msg.sender] + lockPeriod,
             "Lock period not over"
@@ -91,17 +106,19 @@ contract FLTGrant is ERC20, Ownable {
         require(distributionActive, "Distribution is paused");
         require(!claimed[msg.sender], "Already claimed");
 
-        uint amount = balanceOf(msg.sender);
-        require(amount > 0, "No allocation");
+        uint available = balanceOf(msg.sender);
+        require(amount <= available, "Insufficient FLT-GRANT balance");
 
         // Burn FLT-FPT tokens
         _burn(msg.sender, amount);
 
         IERC20(token).safeTransfer(msg.sender, amount);
 
-        claimed[msg.sender] = true;
-
         lockedBalance -= amount;
+
+        if (available - amount == 0) {
+            claimed[msg.sender] = true;
+        }
 
         emit Claimed(msg.sender, amount);
     }
@@ -152,17 +169,13 @@ contract FLTGrant is ERC20, Ownable {
     }
 
     /**
-     * @dev Overrides ERC20 transfer to prevent allocation transfers
+     * @dev Calls the claim method, enabling headless operation
      */
     function transfer(
         address to,
         uint256 amount
     ) public virtual override returns (bool) {
-        assembly {
-            let _to := to
-            let _amount := amount
-        }
-        revert("Unsupported operation");
+        claim(amount);
     }
 
     /**
@@ -173,11 +186,6 @@ contract FLTGrant is ERC20, Ownable {
         address to,
         uint256 amount
     ) public virtual override returns (bool) {
-        assembly {
-            let _from := from
-            let _to := to
-            let _amount := amount
-        }
         revert("Unsupported operation");
     }
 
@@ -188,10 +196,6 @@ contract FLTGrant is ERC20, Ownable {
         address spender,
         uint256 amount
     ) public virtual override returns (bool) {
-        assembly {
-            let _spender := spender
-            let _amount := amount
-        }
         revert("Unsupported operation");
     }
 }
