@@ -211,22 +211,34 @@ describe("FLTGrant", () => {
     });
 
     it("Should be possible to claim in increments using transfer method", async () => {
-      const { alice, fltGrant, fltToken } = await loadFixture(deployFLTGrant);
+      const { alice, bob, fltGrant, fltToken } = await loadFixture(
+        deployFLTGrant
+      );
       const amount = BigInt(10_000);
-      const halfAmount = BigInt(5_000);
       await (await fltGrant.addTokenAllocation(alice, amount)).wait();
       expect(await fltGrant.balanceOf(alice)).to.equal(amount);
 
       await time.increase(oneYear);
 
       const aliceFltGrant = fltGrant.connect(alice);
-      await aliceFltGrant.transfer(ethers.ZeroAddress, halfAmount);
-      expect(await fltToken.balanceOf(alice.address)).to.equal(halfAmount);
-      expect(await fltGrant.balanceOf(alice)).to.equal(halfAmount);
+      await (
+        await aliceFltGrant.transfer(ethers.ZeroAddress, BigInt(1_000))
+      ).wait();
+      expect(await fltToken.balanceOf(alice.address)).to.equal(BigInt(1_000));
+      expect(await fltGrant.balanceOf(alice)).to.equal(amount - BigInt(1_000));
       expect(await fltGrant.claimed(alice)).to.be.false;
 
-      await aliceFltGrant.transfer(await fltGrant.getAddress(), halfAmount);
-      expect(await fltToken.balanceOf(alice.address)).to.equal(amount);
+      await (
+        await aliceFltGrant.transfer(await fltGrant.getAddress(), BigInt(3_000))
+      ).wait();
+      expect(await fltToken.balanceOf(alice.address)).to.equal(BigInt(4_000));
+      expect(await fltGrant.balanceOf(alice)).to.equal(amount - BigInt(4_000));
+      expect(await fltGrant.claimed(alice)).to.be.false;
+
+      await (
+        await aliceFltGrant.transfer(await bob.getAddress(), BigInt(6_000))
+      ).wait();
+      expect(await fltToken.balanceOf(alice.address)).to.equal(BigInt(10_000));
       expect(await fltGrant.balanceOf(alice)).to.equal(0);
       expect(await fltGrant.claimed(alice)).to.be.true;
 
